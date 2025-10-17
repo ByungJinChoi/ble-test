@@ -420,69 +420,89 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-/* === [FIX WRAP] 줌(-)/휴지통 깜빡임 제거 (래퍼 그룹 방식, 드래그/뚜껑 이벤트 비개입) === */
+/* === 줌/휴지통 80% 축소 + ‘휴지통 위로’ 정렬 (동기식 기준점 복원 방식) === */
 (function(){
-  const SCALE  = 0.8;   // 80% 축소
-  const MARGIN = 12;    // 휴지통 바로 위 간격
+  const SCALE = 0.8;   // 축소 비율
+  const MARGIN = 12;   // 휴지통 위 여백
 
-  function ensureWrap(targetG, cls){
-    let wrap = targetG.closest('g.'+cls);
-    if (!wrap) {
-      const svg = targetG.ownerSVGElement || document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
-      wrap = document.createElementNS(svg.namespaceURI, 'g');
-      wrap.setAttribute('class', cls);
-      targetG.parentNode.insertBefore(wrap, targetG);
-      wrap.appendChild(targetG);
+  // 최초 1회 bbox 측정만 고정 (뚜껑 애니메이션 등에도 흔들리지 않도록)
+  function ensureSize(g){
+    if(!g.dataset.bw || !g.dataset.bh){
+      const prev = g.getAttribute('transform');
+      g.removeAttribute('transform');
+      const bb = g.getBBox();
+      g.setAttribute('transform', prev || '');
+      g.dataset.bw = String(bb.width  || 24);
+      g.dataset.bh = String(bb.height || 24);
     }
-    return wrap;
+    return { bw: parseFloat(g.dataset.bw), bh: parseFloat(g.dataset.bh) };
   }
 
-  function recompute(){
-    const svg    = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+  // 현재 transform에서 translate 추출
+  function parseTranslate(el){
+    const t = (el.getAttribute('transform')||'').trim();
+    const m1 = t.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
+    if(m1) return { x: parseFloat(m1[1]||'0'), y: parseFloat(m1[2]||'0'), hasScale:/scale\(/i.test(t) };
+    const m2 = t.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
+    if(m2) return { x: parseFloat(m2[5]||'0'), y: parseFloat(m2[6]||'0'), hasScale:/matrix\(/i.test(t) };
+    return { x: 0, y: 0, hasScale:false };
+  }
+
+  function placeControls(){
+    const svg   = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
     if(!svg) return;
-    const gZoom  = svg.querySelector('g.blocklyZoom');
-    const gTrash = svg.querySelector('g.blocklyTrash');
+    const gZoom = svg.querySelector('g.blocklyZoom');
+    const gTrash= svg.querySelector('g.blocklyTrash');
     if(!gZoom || !gTrash) return;
 
-    // 래퍼 생성(한번만)
-    const zoomWrap  = ensureWrap(gZoom,  'xrobo-zoom-wrap');
-    const trashWrap = ensureWrap(gTrash, 'xrobo-trash-wrap');
+    // 1) 휴지통: 현재 translate에서 기준점(base) 역산 → 우하단 앵커로 scale
+    const S   = ensureSize(gTrash);
+    const tTr = parseTranslate(gTrash);
+    // 현재가 우리의 scale 상태라면 기준점 복원, 아니면 그대로 사용
+    const baseTx = tTr.hasScale ? (tTr.x - (1 - SCALE)*S.bw) : tTr.x;
+    const baseTy = tTr.hasScale ? (tTr.y - (1 - SCALE)*S.bh) : tTr.y;
+    const tx = baseTx + (1 - SCALE) * S.bw;
+    const ty = baseTy + (1 - SCALE) * S.bh;
+    gTrash.setAttribute('transform', `translate(${tx},${ty}) scale(${SCALE})`);
 
-    // 원본 bbox (각 그룹의 로컬좌표)
-    const zBB = gZoom.getBBox();
-    const tBB = gTrash.getBBox();
+    // 2) 줌: 휴지통 오른쪽 경계 맞춰서 "바로 위"에 배치 (오른쪽 정렬)
+    const Z   = ensureSize(gZoom);
+    const zW = Z.bw * SCALE;
+    const zH = Z.bh * SCALE;
 
-    const zBRx = zBB.x + zBB.width,  zBRy = zBB.y + zBB.height;
-    const tBRx = tBB.x + tBB.width,  tBRy = tBB.y + tBB.height;
+    const rightEdge       = baseTx + S.bw;                // 휴지통 원본 오른쪽
+    const topOfTrashFinal = baseTy + (1 - SCALE) * S.bh;  // 축소 후 실제 상단 y
 
-    // 휴지통: 우하단 고정 스케일
-    const trTf = `translate(${tBRx},${tBRy}) scale(${SCALE}) translate(${-tBRx},${-tBRy})`;
-    trashWrap.setAttribute('transform', trTf);
-
-    // 줌 그룹: 우하단 고정 스케일 + 휴지통 바로 위로 정렬
-    const dx = (tBRx - zBRx);
-    const dy = (tBRy - zBRy - MARGIN);
-    const zmTf = `translate(${zBRx},${zBRy}) scale(${SCALE}) translate(${-zBRx},${-zBRy}) translate(${dx},${dy})`;
-    zoomWrap.setAttribute('transform', zmTf);
+    const zx = rightEdge - zW;
+    const zy = topOfTrashFinal - MARGIN - zH;
+    gZoom.setAttribute('transform', `translate(${zx},${zy}) scale(${SCALE})`);
   }
 
-  const schedule = () => requestAnimationFrame(()=>requestAnimationFrame(recompute));
+  // 프레임에 묶어 중복 호출 정리
+  let raf=0;
+  function schedule(){ cancelAnimationFrame(raf); raf=requestAnimationFrame(placeControls); }
 
-  // 초기 1회
+  // 초기/리사이즈/워크스페이스 이벤트에 반응
   schedule();
-
-  // 창 리사이즈/회전 시
   window.addEventListener('resize', schedule);
-
-  // 일부 UI 이벤트(줌/뷰/툴박스 이동) 이후 한 번만 재계산
-  ws.addChangeListener((ev)=>{
-    if(!ev || ev.type !== Blockly.Events.UI) return;
-    const el = ev.element;
-    if (el === 'zoom' || el === 'scale' || el === 'view' || el === 'toolbox' || el === 'bubbleOpen') {
-      schedule();
-    }
-    // trashOpen/drag에는 개입하지 않음 → 깜빡임 원천 차단
+  ws.addChangeListener((ev)=> {
+    // UI 변화(줌, 휴지통 뚜껑 열림, 스크롤/뷰 갱신 등)에 반응
+    if (!ev || ev.type === Blockly.Events.UI || ev.type === Blockly.Events.BLOCK_DRAG) schedule();
   });
+
+  // 드래그 중에는 줌 그룹 클릭 효과 차단 → ‘–’ 깜빡임 방지
+  ws.addChangeListener(function(ev){
+    if(ev && ev.type === Blockly.Events.BLOCK_DRAG && typeof ev.isStart === 'boolean'){
+      const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+      const gZoom = svg?.querySelector('g.blocklyZoom');
+      if(gZoom) gZoom.style.pointerEvents = ev.isStart ? 'none' : '';
+    }
+  });
+  document.addEventListener('mouseup', ()=> {
+    const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+    const gZoom = svg?.querySelector('g.blocklyZoom');
+    if(gZoom) gZoom.style.pointerEvents = '';
+  }, {passive:true});
 })();
 </script>
 
@@ -572,10 +592,10 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
       { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0  0 1 15.52 2h2.96a1 1 0  0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0  0 1 1.33.427l1.48 2.564a1 1 0  0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0  0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0  0 1 18.48 22h-2.96a1 1 0  0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0  0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0  0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0  0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0  0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
         "width":20, "height":20, "alt":"설정" },
       { "type":"field_image", "name":"DUP",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0  0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
         "width":20, "height":20, "alt":"복사" }
     ],
     "previousStatement":null, "nextStatement":null, "colour": 30,
