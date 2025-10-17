@@ -15,7 +15,7 @@
     --headerBgTop: #fff7ed;
     --headerBgBottom: #fffbeb;
     --headerBorder: #fed7aa;
-    --logH: 180px;
+    --logH: 180px;       /* ← 실행 로그 초기 높이 */
     --blue: #1d4ed8;
 
     /* 핸들/삼각형 */
@@ -114,34 +114,42 @@
     padding: calc(12px * var(--uiScale));
     overflow:auto; white-space:pre; tab-size:2;
   }
-/* 실행 로그 패널: 고정 높이 + 내부 스크롤 구조 */
-#rightBottom{
-  flex: 0 0 var(--logH);          /* <- 높이는 변수로 고정 */
-  display: flex;                  /* <- 세로 플렉스 컨테이너로 변경 */
-  flex-direction: column;
-  min-height: 0;                  /* <- 내부 스크롤 허용 */
-  overflow: hidden;               /* <- 자식 넘침 감춤(스크롤은 #log에서 처리) */
-  padding: calc(10px * var(--uiScale));
-  background:#0b0f14; 
-  color:#d1e4ff; 
-  border-top:1px solid #1f2937;
-}
 
-/* 실제 로그 박스: 영역을 채우고, 내용은 스크롤 */
-#log{
-  flex: 1 1 0;                    /* <- 남은 영역을 채움 */
-  min-height: 0;                  /* <- 내부 스크롤에 필수 */
-  overflow: auto;                 /* <- 내용 길어지면 스크롤 생성 */
-  white-space: pre-wrap; 
-  background:#0b0f14;
-  border:1px solid #1f2937; 
-  border-radius: calc(8px * var(--uiScale));
-  padding: calc(10px * var(--uiScale));
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: calc(12px * var(--uiScale)); 
-  color:#d1e4ff;
-}
+  /* === 크기조절 분할바 (코딩창/로그창 사이) === */
+  #splitBar{
+    flex: 0 0 calc(6px * var(--uiScale));
+    cursor: row-resize;
+    background: linear-gradient(180deg, #e5e7eb, #d1d5db);
+    border-top:1px solid #e5e7eb;
+    border-bottom:1px solid #e5e7eb;
+  }
 
+  /* 실행 로그 패널: 고정 높이 + 내부 스크롤 구조 */
+  #rightBottom{
+    flex: 0 0 var(--logH);       /* ← 높이는 변수로 고정 (분할바로 조절) */
+    display: flex;               /* ← 세로 플렉스 컨테이너 */
+    flex-direction: column;
+    min-height: 0;               /* ← 내부 스크롤 허용 */
+    overflow: hidden;            /* ← 자식 넘침 감춤(스크롤은 #log에서 처리) */
+    padding: calc(10px * var(--uiScale));
+    background:#0b0f14; 
+    color:#d1e4ff; 
+    border-top:1px solid #1f2937;
+  }
+  /* 실제 로그 박스: 영역을 채우고, 내용은 스크롤 */
+  #log{
+    flex: 1 1 0;                 /* ← 남은 영역을 채움 */
+    min-height: 0;               /* ← 내부 스크롤에 필수 */
+    overflow: auto;              /* ← 내용 길어지면 스크롤 생성 */
+    white-space: pre-wrap; 
+    background:#0b0f14;
+    border:1px solid #1f2937; 
+    border-radius: calc(8px * var(--uiScale));
+    padding: calc(10px * var(--uiScale));
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: calc(12px * var(--uiScale)); 
+    color:#d1e4ff;
+  }
 
   /* 실행창 토글 핸들 */
   #panelHandle{
@@ -182,7 +190,6 @@
           background:rgba(0,0,0,.45); z-index:10000; }
   .modal.show{ display:flex; }
   .modal-card{
-    /* 상하를 조금 더 확대 (이전보다 살짝 키움) */
     width:min(98vw, 1400px);
     height:min(98vh, 1040px);
     background:#fff; border-radius:12px; box-shadow:0 18px 60px rgba(0,0,0,.25);
@@ -247,15 +254,19 @@
   .dot.blue{ stroke:#1e3a8a; stroke-width:.6; }
   .dot.red { fill:#ef4444; stroke:#7f1d1d; stroke-width:.6; filter: drop-shadow(0 0 6px rgba(239,68,68,.9)); }
 
-  /* === 추가/변경: 휴지통/줌 컨트롤 80% 축소 (CSS 우선) === */
-  #blocklyDiv .blocklyZoom,
-  #blocklyDiv .blocklyTrash{
+  /* === 휴지통/줌 컨트롤 80% 축소 (원래 위치 유지) === */
+  #blocklyDiv svg g.blocklyZoom{
     transform-box: fill-box;
-    transform-origin: 100% 100%;
-    scale: 0.8; /* 80% */
+    transform-origin: 0% 0%;       /* 좌상단 기준 → 위치 변화 최소화 */
+    transform: scale(0.8);
+  }
+  #blocklyDiv svg g.blocklyTrash{
+    transform-box: fill-box;
+    transform-origin: 100% 100%;   /* 우하단 기준 → 위치 변화 최소화 */
+    transform: scale(0.8);
   }
 
-  /* === 추가/변경: 안드로이드 + 세로(포트레이트)에서 오른쪽 패널을 아래로 배치 === */
+  /* === 안드로이드 + 세로(포트레이트)에서 오른쪽 패널을 아래로 배치 === */
   @media (orientation: portrait) {
     body.android #main{
       flex-direction: column;   /* 가로 → 세로 스택 */
@@ -266,10 +277,10 @@
     }
     body.android #right{
       flex: 0 0 auto;
-      height: min(46vh, 520px); /* 필요 시 조정 */
+      height: min(46vh, 520px); /* 필요 시 조정 가능 */
       margin: 8px;
-      border-left: 1px solid #e5e7eb;  /* 좌측 보더를 기본으로 되돌리고 */
-      border-top: 3px solid var(--blue); /* 포인트 컬러를 상단으로 */
+      border-left: 1px solid #e5e7eb;   /* 좌측 보더 */
+      border-top: 3px solid var(--blue);/* 포인트 컬러 상단으로 */
       border-radius: 12px;
     }
     /* 핸들 위치 미세조정(선택) */
@@ -306,6 +317,8 @@
 
     <div id="right">
       <div id="rightTop"></div>
+      <!-- ▼ 크기조절 분할바 추가 -->
+      <div id="splitBar" aria-hidden="true"></div>
       <div id="rightBottom">
         <div style="font-size:calc(12px * var(--uiScale));color:#9ca3af;">실행 로그</div>
         <div id="log"></div>
@@ -415,7 +428,7 @@
   </div>
 
 <script>
-/* === 추가/변경: 안드로이드 감지 → body.android 클래스 부여 === */
+/* 안드로이드 감지 → body.android 클래스 부여 (세로모드 레이아웃 전환용) */
 if (/Android/i.test(navigator.userAgent || '')) { document.body.classList.add('android'); }
 
 /* ================= Blockly 기본 설정 ================= */
@@ -438,45 +451,6 @@ const ws = Blockly.inject('blocklyDiv', {
   grid: { spacing:20, length:3, colour:'#eee', snap:true },
   zoom: { controls:true, wheel:true }
 });
-
-/* === 추가/변경: Blockly 컨트롤(줌/휴지통) 80% 축소 폴백 함수 === */
-function shrinkBlocklyUi(f=0.8){
-  const supportsScale = (typeof CSS!=='undefined' && CSS.supports && CSS.supports('scale', String(f)));
-  const svg = document.querySelector('#blocklyDiv .blocklySvg')
-         || document.querySelector('#blocklyDiv .blocklyWorkspaceSvg')
-         || document.querySelector('#blocklyDiv svg');
-
-  const patch = (g)=>{
-    if(!g) return;
-    if(supportsScale){
-      g.style.scale = String(f);
-      g.style.transformOrigin = '100% 100%';
-      g.style.transformBox = 'fill-box';
-      return;
-    }
-    // transform 속성에 scale을 덧붙여 유지 (Blockly가 translate를 갱신해도 감시)
-    const apply = ()=>{
-      const tr = g.getAttribute('transform') || '';
-      if(!/scale\(/.test(tr)){
-        g.setAttribute('transform', (tr+' scale('+f+')').trim());
-      }else{
-        g.setAttribute('transform', tr.replace(/scale\([^)]*\)/, 'scale('+f+')'));
-      }
-    };
-    apply();
-    const obs = new MutationObserver(muts=>{
-      for(const m of muts){ if(m.attributeName==='transform') apply(); }
-    });
-    obs.observe(g, {attributes:true, attributeFilter:['transform']});
-  };
-
-  if(svg){
-    patch(svg.querySelector('g.blocklyZoom'));
-    patch(svg.querySelector('g.blocklyTrash'));
-  }else{
-    setTimeout(()=>shrinkBlocklyUi(f), 120);
-  }
-}
 
 /* ================= 블록 정의 ================= */
 const PINS_IN=[["IN1","IN1"],["IN2","IN2"],["IN3","IN3"],["IN4","IN4"]];
@@ -625,7 +599,7 @@ function exprFromBlock(b){
       return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
     }
     case 'math_arithmetic': {
-      const map={ADD:'+',MINUS:'-',MULTIPLY:'*',DIVIDE:'/',POWER:'^'}; /* ^는 실제 C에선 pow 필요 */
+      const map={ADD:'+',MINUS:'-',MULTIPLY:'*',DIVIDE:'/',POWER:'^'};
       const op = map[b.getFieldValue('OP')]||'+';
       const A = exprFromBlock(b.getInputTargetBlock('A'));
       const B = exprFromBlock(b.getInputTargetBlock('B'));
@@ -795,10 +769,53 @@ setInterval(()=>applyUiScaleFromWorkspace(), 200);
 applyUiScaleFromWorkspace();
 applyHeaderHeight();
 
-/* === 추가/변경: 컨트롤 80% 축소 적용 & 이벤트 연결 === */
-shrinkBlocklyUi(0.8);
-window.addEventListener('resize', ()=>shrinkBlocklyUi(0.8));
-ws.addChangeListener(()=>shrinkBlocklyUi(0.8));
+/* ================= 크기조절 분할바 동작 ================= */
+(function(){
+  const split = document.getElementById('splitBar');
+  const right = document.getElementById('right');
+  if(!split || !right) return;
+
+  let dragging=false, startY=0, startH=0;
+
+  const getVarPx = ()=>{
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--logH').trim();
+    if(v.endsWith('px')) return parseFloat(v)||180;
+    if(v.endsWith('vh')) return right.clientHeight * (parseFloat(v)/100);
+    return parseFloat(v)||180;
+  };
+  const setVarPx = (px)=>{
+    const minH = 80;                                 // 로그 최소 높이
+    const maxH = Math.max(120, right.clientHeight - 120); // 코딩창 최소 120px 확보
+    const clamped = Math.min(maxH, Math.max(minH, px|0));
+    document.documentElement.style.setProperty('--logH', clamped+'px');
+    Blockly.svgResize(ws);
+  };
+
+  const onMove = (y)=>{
+    const dy = y - startY;
+    setVarPx(startH + dy);
+  };
+
+  split.addEventListener('mousedown', (e)=>{
+    dragging=true; startY=e.clientY; startH=getVarPx();
+    document.body.style.userSelect='none';
+  });
+  window.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
+  window.addEventListener('mouseup', ()=>{ if(dragging){ dragging=false; document.body.style.userSelect=''; } });
+
+  split.addEventListener('touchstart', (e)=>{
+    const t=e.touches[0]; dragging=true; startY=t.clientY; startH=getVarPx();
+    document.body.style.userSelect='none';
+  }, {passive:true});
+  window.addEventListener('touchmove', (e)=>{
+    if(!dragging) return;
+    const t=e.touches[0]; onMove(t.clientY);
+  }, {passive:true});
+  window.addEventListener('touchend', ()=>{ if(dragging){ dragging=false; document.body.style.userSelect=''; } });
+
+  // 창 리사이즈 시 공간 재계산
+  window.addEventListener('resize', ()=>{ setVarPx(getVarPx()); });
+})();
 
 /* ================= BLE & 실행 & 실시간 ================= */
 const SERVICE_UUID=0xFFF0;
