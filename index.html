@@ -420,147 +420,66 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-/* === [FIX] 줌/휴지통 80% 축소 + ‘휴지통 위로’ 정렬 (깜빡임 제거) === */
+<script>
+/* === [PATCH] 줌(-)/휴지통 깜빡임 제거: 최초 1회만 위치/스케일 적용, 드래그/뚜껑 이벤트 개입 없음 === */
 (function(){
-  const SCALE = 0.8;   // 축소 비율
-  const MARGIN = 12;   // 휴지통 위 간격
-  let freeze = false;       // 클릭/애니메이션 중 재배치 잠금
-  let pending = false;
-  let raf = 0;
+  const SCALE  = 0.8;   // 아이콘 80% 축소
+  const MARGIN = 12;    // 휴지통 바로 위 간격(px)
 
-  function parseTransform(el){
-    const t = (el.getAttribute('transform')||'').trim();
-    let tx=0, ty=0, sx=1, sy=1;
-    // translate(...)
-    const mT = t.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
-    if(mT){ tx=parseFloat(mT[1]||'0'); ty=parseFloat(mT[2]||'0'); }
-    // scale(...)
-    const mS = t.match(/scale\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
-    if(mS){ sx=parseFloat(mS[1]||'1'); sy=parseFloat(mS[2]||mS[1]||'1'); }
-    // matrix(a,b,c,d,e,f)
-    const mM = t.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
-    if(mM){
-      const a=+mM[1], b=+mM[2], c=+mM[3], d=+mM[4], e=+mM[5], f=+mM[6];
-      tx=e; ty=f;
-      // 대각 성분으로 scale 근사
-      sx = Math.hypot(a,b) || 1;
-      sy = Math.hypot(c,d) || 1;
-    }
-    return {tx,ty,sx,sy};
+  // 현재 transform에서 translate만 안전하게 뽑기
+  function readTranslate(el){
+    const tr = (el.getAttribute('transform')||'').trim();
+    const mt = tr.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
+    if(mt) return {x:+(mt[1]||0), y:+(mt[2]||0)};
+    const mm = tr.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
+    if(mm) return {x:+(mm[5]||0), y:+(mm[6]||0)};
+    return {x:0,y:0};
   }
 
-  // 초기 한 번만 원본 bbox/translate를 저장
-  function initBase(g, key){
-    if(!g || g.dataset[key+'Init']) return;
-    const bb = g.getBBox(); // 로컬 좌표 bbox (translate 영향 X)
-    g.dataset[key+'Bw'] = String(bb.width || 24);
-    g.dataset[key+'Bh'] = String(bb.height|| 24);
-    const t = parseTransform(g);
-    let baseTx = t.tx, baseTy = t.ty;
-    // 만약 이미 SCALE이 들어간 상태로 로드됐다면(새로고침 등) 기준으로 환원
-    const EPS=1e-3;
-    if (Math.abs(t.sx - SCALE) < EPS || Math.abs(t.sy - SCALE) < EPS){
-      baseTx = t.tx - (1 - SCALE) * (bb.width);
-      baseTy = t.ty - (1 - SCALE) * (bb.height);
-    }
-    g.dataset[key+'Tx'] = String(baseTx);
-    g.dataset[key+'Ty'] = String(baseTy);
-    g.style.willChange = 'transform';
-    g.dataset[key+'Init'] = '1';
-  }
+  // 최초 1회만 배치 (리사이즈 시에도 1회)
+  function placeOnce(){
+    try{
+      const svg    = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+      if(!svg) return;
+      const gZoom  = svg.querySelector('g.blocklyZoom');
+      const gTrash = svg.querySelector('g.blocklyTrash');
+      if(!gZoom || !gTrash) return;
 
-  function place(){
-    if(freeze){ pending = true; return; }
-    const svg   = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
-    if(!svg) return;
-    const gZoom = svg.querySelector('g.blocklyZoom');
-    const gTrash= svg.querySelector('g.blocklyTrash');
-    if(!gZoom || !gTrash) return;
+      // 이미 한 번 배치했다면 건드리지 않음 (깜빡임 원천 차단)
+      if (gZoom.dataset.xroboPlaced === '1' && gTrash.dataset.xroboPlaced === '1') return;
 
-    initBase(gTrash,'tr'); initBase(gZoom,'zm');
+      // 현재(블록리 기본 배치 기준) 좌표와 원본 bbox를 "한 번만" 읽음
+      const trT   = readTranslate(gTrash);
+      const bbT   = gTrash.getBBox();   // 원본 크기
+      const bbZ   = gZoom.getBBox();    // 원본 크기
 
-    const bw = parseFloat(gTrash.dataset['trBw']||'24');
-    const bh = parseFloat(gTrash.dataset['trBh']||'24');
-    const baseTx = parseFloat(gTrash.dataset['trTx']||'0');
-    const baseTy = parseFloat(gTrash.dataset['trTy']||'0');
+      // 1) 휴지통: 우하단 기준 축소
+      const tx = trT.x + (1 - SCALE) * bbT.width;
+      const ty = trT.y + (1 - SCALE) * bbT.height;
+      gTrash.setAttribute('transform', `translate(${tx},${ty}) scale(${SCALE})`);
 
-    // 휴지통: 우하단 앵커로 0.8 스케일
-    const tx = baseTx + (1 - SCALE) * bw;
-    const ty = baseTy + (1 - SCALE) * bh;
-    gTrash.setAttribute('transform', `translate(${tx},${ty}) scale(${SCALE})`);
+      // 2) 줌 그룹: 휴지통 바로 "위", 오른쪽 정렬
+      const zx = trT.x + bbT.width - bbZ.width  * SCALE;
+      const zy = trT.y + (1 - SCALE) * bbT.height - MARGIN - bbZ.height * SCALE;
+      gZoom.setAttribute('transform', `translate(${zx},${zy}) scale(${SCALE})`);
 
-    // 줌 그룹: 휴지통 바로 위, 오른쪽 정렬
-    const zBw = parseFloat(gZoom.dataset['zmBw']||'24');
-    const zBh = parseFloat(gZoom.dataset['zmBh']||'24');
-
-    const rightEdge       = baseTx + bw;
-    const topOfTrashFinal = baseTy + (1 - SCALE) * bh;
-    const zx = rightEdge - zBw * SCALE;
-    const zy = topOfTrashFinal - MARGIN - zBh * SCALE;
-    gZoom.setAttribute('transform', `translate(${zx},${zy}) scale(${SCALE})`);
-  }
-
-  function schedule(){
-    if(freeze){ pending = true; return; }
-    cancelAnimationFrame(raf);
-    // Blockly 내부 페인트가 끝난 "다음" 프레임에 배치 (드랍 순간 깜빡임 방지)
-    raf = requestAnimationFrame(()=>requestAnimationFrame(place));
-  }
-
-  function lock(){ freeze = true; }
-  function unlock(){
-    freeze = false;
-    if(pending){ pending=false; schedule(); }
-  }
-
-  // 클릭 동안은 잠금
-  function attachLocks(){
-    const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
-    const gZoom = svg?.querySelector('g.blocklyZoom');
-    const gTrash= svg?.querySelector('g.blocklyTrash');
-    if(gZoom && !gZoom.__lock){
-      gZoom.__lock=1;
-      gZoom.addEventListener('mousedown', lock, true);
-      gZoom.addEventListener('touchstart', lock, {passive:true, capture:true});
-      const end=()=>setTimeout(unlock,0);
-      gZoom.addEventListener('mouseup', end, true);
-      gZoom.addEventListener('touchend', end, {passive:true, capture:true});
-    }
-    if(gTrash && !gTrash.__lock){
-      gTrash.__lock=1;
-      gTrash.addEventListener('mousedown', lock, true);
-      gTrash.addEventListener('touchstart', lock, {passive:true, capture:true});
-      const end=()=>setTimeout(unlock,0);
-      gTrash.addEventListener('mouseup', end, true);
-      gTrash.addEventListener('touchend', end, {passive:true, capture:true});
+      // 표식 → 이후 드래그/뚜껑 이벤트 중에는 절대 다시 배치하지 않음
+      gZoom.dataset.xroboPlaced  = '1';
+      gTrash.dataset.xroboPlaced = '1';
+    }catch(e){
+      // 혹시 모를 예외도 전체 앱에 영향 없도록 방어
+      console.warn('[xrobo zoom/trash placeOnce]', e);
     }
   }
 
-  schedule();
-  requestAnimationFrame(attachLocks);
-  window.addEventListener('resize', schedule);
-
-  ws.addChangeListener((ev)=>{
-    if(!ev) return;
-    if(ev.type === Blockly.Events.BLOCK_DRAG){
-      // 드래그 중에는 줌 클릭 막기, 끝난 뒤 한 번만 배치
-      const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
-      const gZoom = svg?.querySelector('g.blocklyZoom');
-      if(gZoom) gZoom.style.pointerEvents = ev.isStart ? 'none' : '';
-      if(!ev.isStart) schedule();
-      return;
-    }
-    if(ev.type === Blockly.Events.UI){
-      // 휴지통 뚜껑 애니메이션 중에는 배치하지 않음
-      if(ev.element === 'trashOpen') return;
-      if(ev.element === 'zoom' || ev.element === 'scale' || ev.element==='view'){
-        schedule();
-        return;
-      }
-      schedule();
-    }
-  });
+  // 블록리 레이아웃이 끝난 뒤 1회 배치 (더블 rAF)
+  const scheduleOnce = () => requestAnimationFrame(()=>requestAnimationFrame(placeOnce));
+  scheduleOnce();
+  // 창 크기 변경 시에도 1회만 다시 정렬
+  window.addEventListener('resize', scheduleOnce);
 })();
+</script>
+
 </script>
 
 <script>
@@ -1563,3 +1482,4 @@ $('loadBtn').addEventListener('click', loadProject);
 </script>
 </body>
 </html>
+
