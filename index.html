@@ -420,66 +420,70 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-<script>
-/* === [PATCH] 줌(-)/휴지통 깜빡임 제거: 최초 1회만 위치/스케일 적용, 드래그/뚜껑 이벤트 개입 없음 === */
+/* === [FIX WRAP] 줌(-)/휴지통 깜빡임 제거 (래퍼 그룹 방식, 드래그/뚜껑 이벤트 비개입) === */
 (function(){
-  const SCALE  = 0.8;   // 아이콘 80% 축소
-  const MARGIN = 12;    // 휴지통 바로 위 간격(px)
+  const SCALE  = 0.8;   // 80% 축소
+  const MARGIN = 12;    // 휴지통 바로 위 간격
 
-  // 현재 transform에서 translate만 안전하게 뽑기
-  function readTranslate(el){
-    const tr = (el.getAttribute('transform')||'').trim();
-    const mt = tr.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
-    if(mt) return {x:+(mt[1]||0), y:+(mt[2]||0)};
-    const mm = tr.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
-    if(mm) return {x:+(mm[5]||0), y:+(mm[6]||0)};
-    return {x:0,y:0};
-  }
-
-  // 최초 1회만 배치 (리사이즈 시에도 1회)
-  function placeOnce(){
-    try{
-      const svg    = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
-      if(!svg) return;
-      const gZoom  = svg.querySelector('g.blocklyZoom');
-      const gTrash = svg.querySelector('g.blocklyTrash');
-      if(!gZoom || !gTrash) return;
-
-      // 이미 한 번 배치했다면 건드리지 않음 (깜빡임 원천 차단)
-      if (gZoom.dataset.xroboPlaced === '1' && gTrash.dataset.xroboPlaced === '1') return;
-
-      // 현재(블록리 기본 배치 기준) 좌표와 원본 bbox를 "한 번만" 읽음
-      const trT   = readTranslate(gTrash);
-      const bbT   = gTrash.getBBox();   // 원본 크기
-      const bbZ   = gZoom.getBBox();    // 원본 크기
-
-      // 1) 휴지통: 우하단 기준 축소
-      const tx = trT.x + (1 - SCALE) * bbT.width;
-      const ty = trT.y + (1 - SCALE) * bbT.height;
-      gTrash.setAttribute('transform', `translate(${tx},${ty}) scale(${SCALE})`);
-
-      // 2) 줌 그룹: 휴지통 바로 "위", 오른쪽 정렬
-      const zx = trT.x + bbT.width - bbZ.width  * SCALE;
-      const zy = trT.y + (1 - SCALE) * bbT.height - MARGIN - bbZ.height * SCALE;
-      gZoom.setAttribute('transform', `translate(${zx},${zy}) scale(${SCALE})`);
-
-      // 표식 → 이후 드래그/뚜껑 이벤트 중에는 절대 다시 배치하지 않음
-      gZoom.dataset.xroboPlaced  = '1';
-      gTrash.dataset.xroboPlaced = '1';
-    }catch(e){
-      // 혹시 모를 예외도 전체 앱에 영향 없도록 방어
-      console.warn('[xrobo zoom/trash placeOnce]', e);
+  function ensureWrap(targetG, cls){
+    let wrap = targetG.closest('g.'+cls);
+    if (!wrap) {
+      const svg = targetG.ownerSVGElement || document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+      wrap = document.createElementNS(svg.namespaceURI, 'g');
+      wrap.setAttribute('class', cls);
+      targetG.parentNode.insertBefore(wrap, targetG);
+      wrap.appendChild(targetG);
     }
+    return wrap;
   }
 
-  // 블록리 레이아웃이 끝난 뒤 1회 배치 (더블 rAF)
-  const scheduleOnce = () => requestAnimationFrame(()=>requestAnimationFrame(placeOnce));
-  scheduleOnce();
-  // 창 크기 변경 시에도 1회만 다시 정렬
-  window.addEventListener('resize', scheduleOnce);
-})();
-</script>
+  function recompute(){
+    const svg    = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+    if(!svg) return;
+    const gZoom  = svg.querySelector('g.blocklyZoom');
+    const gTrash = svg.querySelector('g.blocklyTrash');
+    if(!gZoom || !gTrash) return;
 
+    // 래퍼 생성(한번만)
+    const zoomWrap  = ensureWrap(gZoom,  'xrobo-zoom-wrap');
+    const trashWrap = ensureWrap(gTrash, 'xrobo-trash-wrap');
+
+    // 원본 bbox (각 그룹의 로컬좌표)
+    const zBB = gZoom.getBBox();
+    const tBB = gTrash.getBBox();
+
+    const zBRx = zBB.x + zBB.width,  zBRy = zBB.y + zBB.height;
+    const tBRx = tBB.x + tBB.width,  tBRy = tBB.y + tBB.height;
+
+    // 휴지통: 우하단 고정 스케일
+    const trTf = `translate(${tBRx},${tBRy}) scale(${SCALE}) translate(${-tBRx},${-tBRy})`;
+    trashWrap.setAttribute('transform', trTf);
+
+    // 줌 그룹: 우하단 고정 스케일 + 휴지통 바로 위로 정렬
+    const dx = (tBRx - zBRx);
+    const dy = (tBRy - zBRy - MARGIN);
+    const zmTf = `translate(${zBRx},${zBRy}) scale(${SCALE}) translate(${-zBRx},${-zBRy}) translate(${dx},${dy})`;
+    zoomWrap.setAttribute('transform', zmTf);
+  }
+
+  const schedule = () => requestAnimationFrame(()=>requestAnimationFrame(recompute));
+
+  // 초기 1회
+  schedule();
+
+  // 창 리사이즈/회전 시
+  window.addEventListener('resize', schedule);
+
+  // 일부 UI 이벤트(줌/뷰/툴박스 이동) 이후 한 번만 재계산
+  ws.addChangeListener((ev)=>{
+    if(!ev || ev.type !== Blockly.Events.UI) return;
+    const el = ev.element;
+    if (el === 'zoom' || el === 'scale' || el === 'view' || el === 'toolbox' || el === 'bubbleOpen') {
+      schedule();
+    }
+    // trashOpen/drag에는 개입하지 않음 → 깜빡임 원천 차단
+  });
+})();
 </script>
 
 <script>
@@ -568,10 +572,10 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
       { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0  0 1 15.52 2h2.96a1 1 0  0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0  0 1 1.33.427l1.48 2.564a1 1 0  0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0  0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0  0 1 18.48 22h-2.96a1 1 0  0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0  0 1 15.52 2h2.96a1 1 0  0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0  0 1 1.33.427l1.48 2.564a1 1 0  0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0  0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0  0 1 18.48 22h-2.96a1 1 0  0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0  0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
         "width":20, "height":20, "alt":"설정" },
       { "type":"field_image", "name":"DUP",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0  0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
         "width":20, "height":20, "alt":"복사" }
     ],
     "previousStatement":null, "nextStatement":null, "colour": 30,
@@ -1035,7 +1039,7 @@ const boardEl = document.getElementById('board');
 const addServoBtn = document.getElementById('addServoBtn');
 const applyBgBtn = document.getElementById('applyBg');
 const bgUrlInput = document.getElementById('bgUrl');
-const closeModalBtn = document.getElementById('closeModal']);
+const closeModalBtn = document.getElementById('closeModal');
 
 let currentBlock = null;
 let unitSeq = 0;
@@ -1482,4 +1486,3 @@ $('loadBtn').addEventListener('click', loadProject);
 </script>
 </body>
 </html>
-
