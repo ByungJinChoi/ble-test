@@ -420,118 +420,141 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-/* === [FIX] 줌/휴지통 80% 축소 + 정렬 (깜빡임 제거) === */
+/* === [FIX] 줌/휴지통 80% 축소 + ‘휴지통 위로’ 정렬 (깜빡임 제거) === */
 (function(){
   const SCALE = 0.8;   // 축소 비율
   const MARGIN = 12;   // 휴지통 위 간격
   let freeze = false;       // 클릭/애니메이션 중 재배치 잠금
-  let needsResync = false;  // 잠금 동안 들어온 요청
+  let pending = false;
   let raf = 0;
 
-  function ensureSize(g){
-    if(!g?.dataset) return {bw:24,bh:24};
-    if(!g.dataset.bw || !g.dataset.bh){
-      const prev = g.getAttribute('transform');
-      g.removeAttribute('transform');
-      const bb = g.getBBox();
-      g.setAttribute('transform', prev || '');
-      g.dataset.bw = String(bb.width  || 24);
-      g.dataset.bh = String(bb.height || 24);
-    }
-    return { bw: parseFloat(g.dataset.bw)||24, bh: parseFloat(g.dataset.bh)||24 };
-  }
-  function parseTranslate(el){
+  function parseTransform(el){
     const t = (el.getAttribute('transform')||'').trim();
-    const m1 = t.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
-    if(m1) return { x: parseFloat(m1[1]||'0'), y: parseFloat(m1[2]||'0'), hasScale:/scale\(/i.test(t) };
-    const m2 = t.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
-    if(m2) return { x: parseFloat(m2[5]||'0'), y: parseFloat(m2[6]||'0'), hasScale:/matrix\(/i.test(t) };
-    return { x:0, y:0, hasScale:false };
+    let tx=0, ty=0, sx=1, sy=1;
+    // translate(...)
+    const mT = t.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
+    if(mT){ tx=parseFloat(mT[1]||'0'); ty=parseFloat(mT[2]||'0'); }
+    // scale(...)
+    const mS = t.match(/scale\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
+    if(mS){ sx=parseFloat(mS[1]||'1'); sy=parseFloat(mS[2]||mS[1]||'1'); }
+    // matrix(a,b,c,d,e,f)
+    const mM = t.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
+    if(mM){
+      const a=+mM[1], b=+mM[2], c=+mM[3], d=+mM[4], e=+mM[5], f=+mM[6];
+      tx=e; ty=f;
+      // 대각 성분으로 scale 근사
+      sx = Math.hypot(a,b) || 1;
+      sy = Math.hypot(c,d) || 1;
+    }
+    return {tx,ty,sx,sy};
   }
 
-  function lock(){ freeze = true; }
-  function unlock(){
-    if(!freeze) return;
-    freeze = false;
-    if(needsResync){ needsResync = false; schedule(); }
+  // 초기 한 번만 원본 bbox/translate를 저장
+  function initBase(g, key){
+    if(!g || g.dataset[key+'Init']) return;
+    const bb = g.getBBox(); // 로컬 좌표 bbox (translate 영향 X)
+    g.dataset[key+'Bw'] = String(bb.width || 24);
+    g.dataset[key+'Bh'] = String(bb.height|| 24);
+    const t = parseTransform(g);
+    let baseTx = t.tx, baseTy = t.ty;
+    // 만약 이미 SCALE이 들어간 상태로 로드됐다면(새로고침 등) 기준으로 환원
+    const EPS=1e-3;
+    if (Math.abs(t.sx - SCALE) < EPS || Math.abs(t.sy - SCALE) < EPS){
+      baseTx = t.tx - (1 - SCALE) * (bb.width);
+      baseTy = t.ty - (1 - SCALE) * (bb.height);
+    }
+    g.dataset[key+'Tx'] = String(baseTx);
+    g.dataset[key+'Ty'] = String(baseTy);
+    g.style.willChange = 'transform';
+    g.dataset[key+'Init'] = '1';
   }
 
-  function placeControls(){
-    if(freeze) return;
+  function place(){
+    if(freeze){ pending = true; return; }
     const svg   = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
     if(!svg) return;
     const gZoom = svg.querySelector('g.blocklyZoom');
     const gTrash= svg.querySelector('g.blocklyTrash');
     if(!gZoom || !gTrash) return;
 
-    // 한번만 마우스/터치 훅 연결 (클릭 중 재배치 잠금)
-    if(!gZoom.__xfix){
-      gZoom.__xfix = 1;
-      gZoom.addEventListener('mousedown', lock, true);
-      gZoom.addEventListener('touchstart', lock, {passive:true, capture:true});
-      // 클릭이 끝난 직후에 해제
-      gZoom.addEventListener('mouseup',  ()=>setTimeout(unlock,0), true);
-      gZoom.addEventListener('touchend', ()=>setTimeout(unlock,0), {passive:true, capture:true});
-    }
-    if(!gTrash.__xfix){
-      gTrash.__xfix = 1;
-      gTrash.addEventListener('mousedown', lock, true);
-      gTrash.addEventListener('touchstart', lock, {passive:true, capture:true});
-      gTrash.addEventListener('mouseup',  ()=>setTimeout(unlock,0), true);
-      gTrash.addEventListener('touchend', ()=>setTimeout(unlock,0), {passive:true, capture:true});
-    }
-    // 전역 보조(혹시 위 핸들 못탔을 때)
-    window.addEventListener('mouseup', unlock, true);
-    window.addEventListener('touchend', unlock, true);
+    initBase(gTrash,'tr'); initBase(gZoom,'zm');
 
-    // 휴지통: 기준점 복원 후 scale
-    const S   = ensureSize(gTrash);
-    const tTr = parseTranslate(gTrash);
-    const baseTx = tTr.hasScale ? (tTr.x - (1 - SCALE)*S.bw) : tTr.x;
-    const baseTy = tTr.hasScale ? (tTr.y - (1 - SCALE)*S.bh) : tTr.y;
-    const tx = baseTx + (1 - SCALE) * S.bw;
-    const ty = baseTy + (1 - SCALE) * S.bh;
+    const bw = parseFloat(gTrash.dataset['trBw']||'24');
+    const bh = parseFloat(gTrash.dataset['trBh']||'24');
+    const baseTx = parseFloat(gTrash.dataset['trTx']||'0');
+    const baseTy = parseFloat(gTrash.dataset['trTy']||'0');
+
+    // 휴지통: 우하단 앵커로 0.8 스케일
+    const tx = baseTx + (1 - SCALE) * bw;
+    const ty = baseTy + (1 - SCALE) * bh;
     gTrash.setAttribute('transform', `translate(${tx},${ty}) scale(${SCALE})`);
 
-    // 줌(+-): 휴지통 '바로 위'로, 오른쪽 정렬
-    const Z   = ensureSize(gZoom);
-    const zW  = Z.bw * SCALE;
-    const zH  = Z.bh * SCALE;
-    const rightEdge       = baseTx + S.bw;                // 휴지통 원본 오른쪽
-    const topOfTrashFinal = baseTy + (1 - SCALE) * S.bh;  // 축소 후 실제 상단 y
-    const zx = rightEdge - zW;
-    const zy = topOfTrashFinal - MARGIN - zH;
+    // 줌 그룹: 휴지통 바로 위, 오른쪽 정렬
+    const zBw = parseFloat(gZoom.dataset['zmBw']||'24');
+    const zBh = parseFloat(gZoom.dataset['zmBh']||'24');
+
+    const rightEdge       = baseTx + bw;
+    const topOfTrashFinal = baseTy + (1 - SCALE) * bh;
+    const zx = rightEdge - zBw * SCALE;
+    const zy = topOfTrashFinal - MARGIN - zBh * SCALE;
     gZoom.setAttribute('transform', `translate(${zx},${zy}) scale(${SCALE})`);
   }
 
   function schedule(){
-    if(freeze){ needsResync = true; return; }
+    if(freeze){ pending = true; return; }
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(placeControls);
+    // Blockly 내부 페인트가 끝난 "다음" 프레임에 배치 (드랍 순간 깜빡임 방지)
+    raf = requestAnimationFrame(()=>requestAnimationFrame(place));
   }
 
-  // 초기 1회 + 리사이즈
+  function lock(){ freeze = true; }
+  function unlock(){
+    freeze = false;
+    if(pending){ pending=false; schedule(); }
+  }
+
+  // 클릭 동안은 잠금
+  function attachLocks(){
+    const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+    const gZoom = svg?.querySelector('g.blocklyZoom');
+    const gTrash= svg?.querySelector('g.blocklyTrash');
+    if(gZoom && !gZoom.__lock){
+      gZoom.__lock=1;
+      gZoom.addEventListener('mousedown', lock, true);
+      gZoom.addEventListener('touchstart', lock, {passive:true, capture:true});
+      const end=()=>setTimeout(unlock,0);
+      gZoom.addEventListener('mouseup', end, true);
+      gZoom.addEventListener('touchend', end, {passive:true, capture:true});
+    }
+    if(gTrash && !gTrash.__lock){
+      gTrash.__lock=1;
+      gTrash.addEventListener('mousedown', lock, true);
+      gTrash.addEventListener('touchstart', lock, {passive:true, capture:true});
+      const end=()=>setTimeout(unlock,0);
+      gTrash.addEventListener('mouseup', end, true);
+      gTrash.addEventListener('touchend', end, {passive:true, capture:true});
+    }
+  }
+
   schedule();
+  requestAnimationFrame(attachLocks);
   window.addEventListener('resize', schedule);
 
-  // 드래그: 시작 시 줌 클릭막기, 끝난 뒤 한 번만 재배치
   ws.addChangeListener((ev)=>{
     if(!ev) return;
     if(ev.type === Blockly.Events.BLOCK_DRAG){
+      // 드래그 중에는 줌 클릭 막기, 끝난 뒤 한 번만 배치
       const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
       const gZoom = svg?.querySelector('g.blocklyZoom');
       if(gZoom) gZoom.style.pointerEvents = ev.isStart ? 'none' : '';
-      if(!ev.isStart) schedule();   // 끝났을 때만 재배치
+      if(!ev.isStart) schedule();
       return;
     }
     if(ev.type === Blockly.Events.UI){
-      // 휴지통 뚜껑 애니메이션 중에는 재배치하지 않음 → –/휴지통 깜빡임 방지
+      // 휴지통 뚜껑 애니메이션 중에는 배치하지 않음
       if(ev.element === 'trashOpen') return;
-
-      // 줌(스케일) 중 클릭 동안은 지연, 끝나면 한 번만 재배치
-      if(ev.element === 'zoom' || ev.element === 'scale'){
-        needsResync = true;
-        if(!freeze) schedule();
+      if(ev.element === 'zoom' || ev.element === 'scale' || ev.element==='view'){
+        schedule();
         return;
       }
       schedule();
@@ -1093,7 +1116,7 @@ const boardEl = document.getElementById('board');
 const addServoBtn = document.getElementById('addServoBtn');
 const applyBgBtn = document.getElementById('applyBg');
 const bgUrlInput = document.getElementById('bgUrl');
-const closeModalBtn = document.getElementById('closeModal');
+const closeModalBtn = document.getElementById('closeModal']);
 
 let currentBlock = null;
 let unitSeq = 0;
