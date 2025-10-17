@@ -15,7 +15,7 @@
     --headerBgTop: #fff7ed;
     --headerBgBottom: #fffbeb;
     --headerBorder: #fed7aa;
-    --logH: 180px;
+    --logH: 180px;   /* 실행 로그 초기 높이 */
     --blue: #1d4ed8;
 
     /* 핸들/삼각형 */
@@ -124,23 +124,22 @@
     border-bottom:1px solid #e5e7eb;
   }
 
-  /* 실행 로그 패널: 고정 높이 + 내부 스크롤 구조 */
+  /* 실행 로그 패널 */
   #rightBottom{
-    flex: 0 0 var(--logH);       /* ← 높이는 변수로 고정 (분할바로 조절) */
-    display: flex;               /* ← 세로 플렉스 컨테이너 */
+    flex: 0 0 var(--logH);       /* ← 높이는 변수(분할바로 조절) */
+    display: flex;
     flex-direction: column;
-    min-height: 0;               /* ← 내부 스크롤 허용 */
-    overflow: hidden;            /* ← 자식 넘침 감춤(스크롤은 #log에서 처리) */
+    min-height: 0;
+    overflow: hidden;
     padding: calc(10px * var(--uiScale));
     background:#0b0f14; 
     color:#d1e4ff; 
     border-top:1px solid #1f2937;
   }
-  /* 실제 로그 박스: 영역을 채우고, 내용은 스크롤 */
   #log{
-    flex: 1 1 0;                 /* ← 남은 영역을 채움 */
-    min-height: 0;               /* ← 내부 스크롤에 필수 */
-    overflow: auto;              /* ← 내용 길어지면 스크롤 생성 */
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
     white-space: pre-wrap; 
     background:#0b0f14;
     border:1px solid #1f2937; 
@@ -204,11 +203,8 @@
   .modal-head .btn{ height:30px; background:#fff; border:1px solid #d1d5db; }
   .modal-body{ position:relative; flex:1 1 auto; }
 
-  /* 모달 보드(흰 배경) + 유닛(회색 박스) + 검은 다이얼 */
-  .board{
-    position:absolute; inset:0; background:#ffffff; background-size:contain; background-repeat:no-repeat; background-position:center;
-    overflow:auto; /* ← 넘치면 스크롤 */
-  }
+  /* 모달 보드 + 유닛(회색 박스) + 다이얼 */
+  .board{ position:absolute; inset:0; background:#ffffff; background-size:contain; background-repeat:no-repeat; background-position:center; overflow:auto; }
   .unit{
     position:absolute; width:128px; height:128px;
     background:#d1d5db; border:1px solid #9ca3af; border-radius:10px;
@@ -238,12 +234,9 @@
     flex:1 1 0; height:100%; border-radius:7px; background:#ffffff; border:1px solid #d1d5db;
     display:flex; align-items:center; justify-content:center;
   }
-  .numbox input{
-    width:calc(100% - 10px); height:18px; border:0; outline:none; background:transparent; color:#111827; text-align:center; font-size:12px;
-  }
-  .speedbox select{
-    width:100%; height:18px; border:0; outline:none; background:transparent; color:#111827; text-align:center; font-size:12px;
-  }
+  .numbox input{ width:calc(100% - 10px); height:18px; border:0; outline:none; background:transparent; color:#111827; text-align:center; font-size:12px; }
+  .speedbox select{ width:100%; height:18px; border:0; outline:none; background:transparent; color:#111827; text-align:center; font-size:12px; }
+
   .dial-svg{
     position:absolute; left:50%; top:calc(50% + 20px); transform:translate(-50%,-50%);
     width:56px; height:56px; z-index:1;
@@ -256,24 +249,13 @@
 
   /* === 안드로이드 + 세로(포트레이트)에서 오른쪽 패널을 아래로 배치 === */
   @media (orientation: portrait) {
-    body.android #main{
-      flex-direction: column;
-    }
-    body.android #left{
-      flex: 1 1 auto;
-      min-height: 0;
-    }
+    body.android #main{ flex-direction: column; }
+    body.android #left{ flex: 1 1 auto; min-height: 0; }
     body.android #right{
-      flex: 0 0 auto;
-      height: min(46vh, 520px);
-      margin: 8px;
-      border-left: 1px solid #e5e7eb;
-      border-top: 3px solid var(--blue);
-      border-radius: 12px;
+      flex: 0 0 auto; height: min(46vh, 520px); margin: 8px;
+      border-left: 1px solid #e5e7eb; border-top: 3px solid var(--blue); border-radius: 12px;
     }
-    body.android #panelHandle{
-      top: calc(8px * var(--uiScale));
-    }
+    body.android #panelHandle{ top: calc(8px * var(--uiScale)); }
   }
 </style>
 </head>
@@ -414,7 +396,7 @@
   </div>
 
 <script>
-/* 안드로이드 감지 → body.android 클래스 부여 */
+/* 안드로이드 감지 → body.android */
 if (/Android/i.test(navigator.userAgent || '')) { document.body.classList.add('android'); }
 
 /* ================= Blockly 기본 설정 ================= */
@@ -438,25 +420,38 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-/* === 수정: 줌/휴지통을 ‘원래 위치 유지’한 채 80% 축소 (래퍼 <g>로 scale) === */
-function scaleBlocklyControls(scale=0.8){
+/* === (핵심) 줌/휴지통 80% 축소 + ‘휴지통 위로’ 정렬 === */
+function scaleAndPlaceBlocklyControls(scale=0.8, margin=8){
   const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg') || document.querySelector('#blocklyDiv .blocklySvg');
-  if(!svg){ requestAnimationFrame(()=>scaleBlocklyControls(scale)); return; }
+  if(!svg){ requestAnimationFrame(()=>scaleAndPlaceBlocklyControls(scale, margin)); return; }
 
-  function wrapAndScale(group, anchor /* 'tl' | 'br' */){
-    if(!group) return;
-    // 기존 래퍼 찾기
+  const gZoom  = svg.querySelector('g.blocklyZoom');
+  const gTrash = svg.querySelector('g.blocklyTrash');
+  if(!gZoom || !gTrash) return;
+
+  // 안전 파서: translate(...) or matrix(...).
+  const parseTransform = (el)=>{
+    const t = (el.getAttribute('transform')||'').trim();
+    let x=0,y=0;
+    let m = t.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
+    if(m){ x=parseFloat(m[1]||'0'); y=parseFloat(m[2]||'0'); return {x,y}; }
+    m = t.match(/matrix\(\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*,\s*([-\d.eE]+)\s*\)/i);
+    if(m){ x=parseFloat(m[5]||'0'); y=parseFloat(m[6]||'0'); }
+    return {x,y};
+  };
+
+  // 그룹 하위에 한 번만 래퍼 <g.__xscale>를 만들어 scale/offset 적용
+  function ensureWrapAndScale(group, anchor /* 'tl' | 'br' */){
+    if(!group) return null;
     let wrap = Array.from(group.children).find(el => el.classList && el.classList.contains('__xscale'));
-    // 래퍼 없으면 생성하고, 자식들을 래퍼로 이동
     if(!wrap){
       wrap = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       wrap.setAttribute('class','__xscale');
       while(group.firstChild){ wrap.appendChild(group.firstChild); }
       group.appendChild(wrap);
-      // 측정용(스케일 1에서 bbox 저장)
-      wrap.removeAttribute('transform');
+      wrap.removeAttribute('transform'); // 원본 크기로 bbox 측정
       const bb = wrap.getBBox();
-      wrap.dataset.bw = String(bb.width || 24);
+      wrap.dataset.bw = String(bb.width  || 24);
       wrap.dataset.bh = String(bb.height || 24);
     }
     const bw = parseFloat(wrap.dataset.bw || '24');
@@ -466,18 +461,46 @@ function scaleBlocklyControls(scale=0.8){
       const dx = (1 - scale) * bw;
       const dy = (1 - scale) * bh;
       wrap.setAttribute('transform', `translate(${dx},${dy}) scale(${scale})`);
-    }else{
+    }else{ // 'tl'
       wrap.setAttribute('transform', `scale(${scale})`);
     }
+    return {wrap, bw, bh};
   }
 
-  const gZoom  = svg.querySelector('g.blocklyZoom');
-  const gTrash = svg.querySelector('g.blocklyTrash');
-  wrapAndScale(gZoom,  'tl'); // 좌상단 고정
-  wrapAndScale(gTrash, 'br'); // 우하단 고정
+  // 1) 휴지통: 우하단 고정 + 80% 축소
+  const trash = ensureWrapAndScale(gTrash, 'br');
+  if(!trash) return;
+
+  // 2) 줌: 좌상단 기준 80% 축소(랩), 이후 그룹 자체를 translate로 '휴지통 위'로 이동
+  const zoom = ensureWrapAndScale(gZoom, 'tl');
+  if(!zoom) return;
+
+  // 3) 배치 계산
+  const tz = parseTransform(gTrash);
+  const tW = trash.bw;       // 휴지통 원본 폭
+  const tH = trash.bh;       // 휴지통 원본 높이
+  const zW = zoom.bw * scale; // 줌 최종 폭
+  const zH = zoom.bh * scale; // 줌 최종 높이
+
+  // 휴지통 최종 오른쪽/위쪽 가장자리 (우하단 앵커 성질 이용)
+  const rightEdge = tz.x + tW;                     // 스케일과 무관하게 유지
+  const topOfTrashFinal = tz.y + (1 - scale) * tH; // 스케일 보정된 실제 상단
+
+  // 줌을 휴지통 "바로 위"로, 오른쪽 정렬
+  const zx = rightEdge - zW;                       // 오른쪽 정렬
+  const zy = topOfTrashFinal - margin - zH;        // 위쪽에 margin만큼 띄우기
+
+  gZoom.setAttribute('transform', `translate(${zx},${zy})`);
 }
 
-/* ================= 블록 정의 ================= */
+function schedulePlace(){
+  requestAnimationFrame(()=>scaleAndPlaceBlocklyControls(0.8, 8));
+}
+schedulePlace();
+window.addEventListener('resize', schedulePlace);
+ws.addChangeListener(schedulePlace);
+
+/* ================= 블록들 정의(원본 유지) ================= */
 const PINS_IN=[["IN1","IN1"],["IN2","IN2"],["IN3","IN3"],["IN4","IN4"]];
 const PINS_OUT=[["OUT1","OUT1"],["OUT2","OUT2"],["OUT3","OUT3"],["OUT4","OUT4"],["OUT5","OUT5"],["OUT6","OUT6"],["OUT7","OUT7"],["OUT8","OUT8"]];
 const KEYS_B=[["B1","B1"],["B2","B2"],["B3","B3"],["B4","B4"],["B5","B5"]];
@@ -562,10 +585,10 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
       { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0 0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0 0 1 .255 1.287l-1.48 2.564a1 1 0 0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0 0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0 0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0 0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0 0 1 .255 1.287l-1.48 2.564a1 1 0 0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0 0 1-.986-.836l-.21-1.145a8.9 8.9 0  0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
         "width":20, "height":20, "alt":"설정" },
       { "type":"field_image", "name":"DUP",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
         "width":20, "height":20, "alt":"복사" }
     ],
     "previousStatement":null, "nextStatement":null, "colour": 30,
@@ -574,17 +597,11 @@ Blockly.defineBlocksWithJsonArray([
 ]);
 
 /* 멀티 서보 확장: 설정 버튼 + 복사 버튼 */
-const multiServoConfigs = new Map(); // blockId -> config({units:[...], bgUrl:""})
-
-function cloneConfigDeep(cfg){
-  return JSON.parse(JSON.stringify(cfg || { bgUrl:'', units:[] }));
-}
+const multiServoConfigs = new Map();
+function cloneConfigDeep(cfg){ return JSON.parse(JSON.stringify(cfg || { bgUrl:'', units:[] })); }
 function duplicateMultiServoBlock(srcBlock){
   const cfgOld = multiServoConfigs.get(srcBlock.id);
-  const cfgNew = cloneConfigDeep(cfgOld || {
-    bgUrl:'',
-    units:[{name:'S1', angle:135, speed:10, power:true, x:12, y:56}]
-  });
+  const cfgNew = cloneConfigDeep(cfgOld || { bgUrl:'', units:[{name:'S1', angle:135, speed:10, power:true, x:12, y:56}] });
   const pos = srcBlock.getRelativeToSurfaceXY();
   const newBlock = ws.newBlock('multi_servo');
   newBlock.initSvg(); newBlock.render();
@@ -598,12 +615,10 @@ Blockly.Extensions.register('multi_servo_cfg', function (){
   const dupBtn = this.getField('DUP');
   if (cfgBtn?.setOnClickHandler) cfgBtn.setOnClickHandler(() => openServoModal(this));
   if (dupBtn?.setOnClickHandler) dupBtn.setOnClickHandler(() => duplicateMultiServoBlock(this));
-  this.setOnChange(function(){
-    if (this.isDeadOrDying_) multiServoConfigs.delete(this.id);
-  });
+  this.setOnChange(function(){ if (this.isDeadOrDying_) multiServoConfigs.delete(this.id); });
 });
 
-/* ================= 식/코드 생성 유틸 ================= */
+/* ================= 식/코드 생성 유틸(원본 유지) ================= */
 function numFromInput(parent, name, def=0){
   const n = Number(Blockly.JavaScript.valueToCode(parent, name, Blockly.JavaScript.ORDER_NONE) ?? '');
   return Number.isFinite(n) ? n : def;
@@ -674,7 +689,6 @@ function walkNode(b, list){
     case 'led_ctrl':{
       const t=b.getFieldValue('TGT'),m=b.getFieldValue('MODE'),v=+b.getFieldValue('VAL'); list.push({type:'CMD',s:`LED ${t} ${m} ${v}`}); break; }
 
-    /* 멀티 서보 블록은 설정/메타 전용 → 코드 생성 없음(주석만) */
     case 'multi_servo':{
       const cfg = multiServoConfigs.get(b.id);
       const n = cfg?.units?.length || 0;
@@ -794,13 +808,7 @@ setInterval(()=>applyUiScaleFromWorkspace(), 200);
 applyUiScaleFromWorkspace();
 applyHeaderHeight();
 
-/* === 적용: 아이콘 스케일(80%) — 초기/변경/리사이즈마다 유지 === */
-function scheduleScale(){ requestAnimationFrame(()=>scaleBlocklyControls(0.8)); }
-scheduleScale();
-window.addEventListener('resize', scheduleScale);
-ws.addChangeListener(scheduleScale);
-
-/* ================= 크기조절 분할바 동작 (방향 수정) ================= */
+/* ================= 크기조절 분할바 (아래로 내리면 로그창 줄어듦) ================= */
 (function(){
   const split = document.getElementById('splitBar');
   const right = document.getElementById('right');
@@ -824,7 +832,7 @@ ws.addChangeListener(scheduleScale);
 
   const onMove = (y)=>{
     const dy = y - startY;
-    setVarPx(startH - dy);  /* === 수정: 아래로 드래그 시 로그창이 줄어들도록 반전 === */
+    setVarPx(startH - dy);  // 아래로 당기면 로그창 감소
   };
 
   split.addEventListener('mousedown', (e)=>{
@@ -847,13 +855,13 @@ ws.addChangeListener(scheduleScale);
   window.addEventListener('resize', ()=>{ setVarPx(getVarPx()); });
 })();
 
-/* ================= BLE & 실행 & 실시간 ================= */
+/* ================= BLE & 실행 & 실시간 (원본 유지) ================= */
 const SERVICE_UUID=0xFFF0;
 let bleDevice=null,bleServer=null,bleService=null,writeChar=null,notifyChar=null;
 let connectToken=0;
 let runToken=0;
 let isConnected=false, isRunning=false;
-let realTime=false; // ★ 실시간 전송
+let realTime=false;
 
 const $=id=>document.getElementById(id);
 const log=m=>{ const L=$('log'); L.textContent+=m+"\n"; L.scrollTop=L.scrollHeight; };
@@ -1037,7 +1045,7 @@ fsBtn.onclick=async()=>{ if(document.fullscreenElement) await exitFS(); else awa
 document.addEventListener('fullscreenchange', syncFSLabel);
 syncFSLabel();
 
-/* ================= 멀티 서보 설정 모달 구현 ================= */
+/* ================= 멀티 서보 설정 모달 구현(원본 유지) ================= */
 const servoModal = document.getElementById('servoModal');
 const boardEl = document.getElementById('board');
 const addServoBtn = document.getElementById('addServoBtn');
@@ -1045,8 +1053,8 @@ const applyBgBtn = document.getElementById('applyBg');
 const bgUrlInput = document.getElementById('bgUrl');
 const closeModalBtn = document.getElementById('closeModal');
 
-let currentBlock = null; // 현재 설정중인 멀티 서보 블록
-let unitSeq = 0;         // 유닛 생성 순서(초기 위치 분산)
+let currentBlock = null;
+let unitSeq = 0;
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 const toRad=d=>d*Math.PI/180;
 const toDeg=r=>r*180/Math.PI;
@@ -1062,18 +1070,15 @@ function projectToArcWithSide(rawDeg, dx, lastScrDeg){
   return dx >= 0 ? -45 : 225;
 }
 
-/* 유닛 생성/이벤트 */
 function createUnit(state){
   const {name, x, y} = state;
   const unit = document.createElement('div');
   unit.className='unit'; unit.style.left=(x||10)+'px'; unit.style.top=(y||48)+'px'; unit.dataset.name=name;
 
-  // 헤더 + 토글
   const handle = document.createElement('div'); handle.className='handle'; handle.textContent=name;
   const pwrTop = document.createElement('div'); pwrTop.className='pwr-top'+(state.power? '' : ' off'); pwrTop.textContent=state.power?'ON':'OFF';
   handle.appendChild(pwrTop); unit.appendChild(handle);
 
-  // 행(각도/속도)
   const row = document.createElement('div'); row.className='row';
   const num = document.createElement('div'); num.className='numbox';
   const inp = document.createElement('input'); inp.type='number'; inp.min='0'; inp.max='270'; inp.step='1'; inp.value=String(state.angle ?? 135);
@@ -1085,7 +1090,6 @@ function createUnit(state){
   spdBox.appendChild(spdSel);
   row.append(num, spdBox); unit.appendChild(row);
 
-  // 다이얼
   const svgNS='http://www.w3.org/2000/svg';
   const svg = document.createElementNS(svgNS,'svg');
   svg.setAttribute('class','dial-svg'); svg.setAttribute('viewBox','0 0 100 100'); svg.setAttribute('tabindex','0');
@@ -1115,7 +1119,6 @@ function createUnit(state){
   unit.appendChild(svg);
   boardEl.appendChild(unit);
 
-  // 내부 상태 합치기
   state.els = {unit, handle, pwrTop, row, inp, spdSel, svg, ring, tick0, tick135, tick270, dot, gradId};
   state.lastScrDeg = valToScreenDeg(state.angle ?? 135);
 
@@ -1130,7 +1133,7 @@ function createUnit(state){
   }
   function placeDot(){
     if(!state.els.dot.classList.contains('red')) state.els.dot.setAttribute('fill', `url(#${state.els.gradId})`);
-    const R = 30; // 안쪽 경로
+    const R = 30;
     const a=toRad(valToScreenDeg(state.angle));
     const x=50+R*Math.cos(a), y=50-R*Math.sin(a);
     state.els.dot.setAttribute('cx',x); state.els.dot.setAttribute('cy',y);
@@ -1138,7 +1141,6 @@ function createUnit(state){
   function render(){ state.els.inp.value=Math.round(state.angle); state.els.spdSel.value=String(state.speed); placeDot(); }
   layoutTicks(); render();
 
-  // ON/OFF (모달에서는 드래그 차단)
   const stopProp = ev => ev.stopPropagation();
   state.els.pwrTop.addEventListener('mousedown', stopProp);
   state.els.pwrTop.addEventListener('touchstart', stopProp, {passive:false});
@@ -1151,7 +1153,6 @@ function createUnit(state){
     sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
   });
 
-  // 각도/속도
   state.els.inp.addEventListener('change', ()=>{
     const v=Number(state.els.inp.value);
     if(Number.isFinite(v)){ state.angle=clamp(Math.round(v),0,270); render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`); }
@@ -1162,7 +1163,6 @@ function createUnit(state){
     render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
   });
 
-  // 다이얼
   function setDotActive(on){
     state.els.dot.classList.toggle('red', !!on);
     state.els.dot.classList.toggle('blue', !on);
@@ -1220,9 +1220,8 @@ function createUnit(state){
       const q=('touches' in ev)?ev.touches[0]:ev; if('touches' in ev) ev.preventDefault();
       const b=boardEl.getBoundingClientRect();
       let nx=q.clientX-b.left-dragDx, ny=q.clientY-b.top-dragDy;
-      nx=clamp(nx,0,b.width-state.els.unit.offsetWidth);
-      ny=clamp(ny,46,b.height-state.els.unit.offsetHeight);
-      state.els.unit.style.left=nx+'px'; state.els.unit.style.top=ny+'px';
+      state.els.unit.style.left=Math.max(0,Math.min(nx,b.width-state.els.unit.offsetWidth))+'px';
+      state.els.unit.style.top =Math.max(46,Math.min(ny,b.height-state.els.unit.offsetHeight))+'px';
     };
     const up = ()=>{
       state.els.unit.classList.remove('dragging');
@@ -1240,6 +1239,13 @@ function createUnit(state){
 }
 
 /* 모달 열기/닫기/저장 */
+const boardEl = document.getElementById('board');
+const addServoBtn = document.getElementById('addServoBtn');
+const applyBgBtn = document.getElementById('applyBg');
+const bgUrlInput = document.getElementById('bgUrl');
+const closeModalBtn = document.getElementById('closeModal');
+let currentBlock = null; let unitSeq = 0;
+
 function openServoModal(block){
   currentBlock = block;
   boardEl.innerHTML = '';
@@ -1259,8 +1265,8 @@ function openServoModal(block){
   cfg.units.forEach(u => createUnit(u));
 
   setRealtime(realTime);
-  servoModal.classList.add('show');
-  servoModal.setAttribute('aria-hidden','false');
+  document.getElementById('servoModal').classList.add('show');
+  document.getElementById('servoModal').setAttribute('aria-hidden','false');
 }
 function closeServoModalAndSave(){
   if(!currentBlock) return;
@@ -1285,12 +1291,10 @@ function closeServoModalAndSave(){
 
   if(cfg.bgUrl) boardEl.style.backgroundImage = `url("${cfg.bgUrl}")`; else boardEl.style.backgroundImage='';
 
-  servoModal.classList.remove('show');
-  servoModal.setAttribute('aria-hidden','true');
+  document.getElementById('servoModal').classList.remove('show');
+  document.getElementById('servoModal').setAttribute('aria-hidden','true');
   currentBlock = null;
 }
-
-/* 모달 버튼들 */
 addServoBtn.addEventListener('click', ()=>{
   if(!currentBlock) return;
   const cfg = multiServoConfigs.get(currentBlock.id) || {bgUrl:'', units:[]};
@@ -1307,12 +1311,10 @@ applyBgBtn.addEventListener('click', ()=>{
   boardEl.style.backgroundImage = url ? `url("${url}")` : '';
 });
 closeModalBtn.addEventListener('click', closeServoModalAndSave);
-servoModal.addEventListener('click', (e)=>{ if(e.target===servoModal) closeServoModalAndSave(); });
+document.getElementById('servoModal').addEventListener('click', (e)=>{ if(e.target===document.getElementById('servoModal')) closeServoModalAndSave(); });
 
-/* ================= 저장 / 불러오기 (버전 호환) ================= */
+/* ================= 저장 / 불러오기 (원본 유지) ================= */
 const btnSave=$('saveBtn'), btnLoad=$('loadBtn');
-
-/* Blockly XML/Serialization 호환 래퍼 */
 function textToDomCompat(xmlText){
   if (Blockly.Xml && typeof Blockly.Xml.textToDom === 'function') return Blockly.Xml.textToDom(xmlText);
   if (Blockly.utils && Blockly.utils.xml && typeof Blockly.utils.xml.textToDom === 'function') return Blockly.utils.xml.textToDom(xmlText);
@@ -1320,7 +1322,7 @@ function textToDomCompat(xmlText){
   const doc = parser.parseFromString(xmlText, 'text/xml');
   const perr = doc.getElementsByTagName('parsererror')[0];
   if (perr) throw new Error('XML 파싱 오류');
-  return doc; // Document 반환
+  return doc;
 }
 function domToTextCompat(dom){
   if (Blockly.Xml && typeof Blockly.Xml.domToText === 'function') return Blockly.Xml.domToText(dom);
@@ -1329,7 +1331,7 @@ function domToTextCompat(dom){
 }
 function workspaceToDomCompat(workspace){
   if (Blockly.Xml && typeof Blockly.Xml.workspaceToDom === 'function') return Blockly.Xml.workspaceToDom(workspace);
-  return null; // 최신 serialization만 있는 빌드일 수 있음
+  return null;
 }
 function domToWorkspaceCompat(dom, workspace){
   if (Blockly.Xml && typeof Blockly.Xml.domToWorkspace === 'function') return Blockly.Xml.domToWorkspace(dom, workspace);
@@ -1348,20 +1350,19 @@ function workspaceLoadJsonCompat(state, workspace){
   }
   return false;
 }
-
 function ts(){
   const d=new Date();
   const pad=n=>String(n).padStart(2,'0');
   return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 function buildProjectPayload(){
-  if(servoModal.classList.contains('show')) closeServoModalAndSave();
+  if(document.getElementById('servoModal').classList.contains('show')) closeServoModalAndSave();
 
   let xmlText = null;
   const dom = workspaceToDomCompat(ws);
   if(dom) xmlText = domToTextCompat(dom);
 
-  const jsonState = workspaceSaveJsonCompat(ws); // 일부 빌드 대비 백업
+  const jsonState = workspaceSaveJsonCompat(ws);
 
   const entries = {};
   for(const [k,v] of multiServoConfigs.entries()){
@@ -1373,8 +1374,8 @@ function buildProjectPayload(){
   return {
     format: 'xrobo-ble-v1',
     time: new Date().toISOString(),
-    workspaceXml: xmlText,      // 선호
-    workspaceJson: jsonState,   // 백업
+    workspaceXml: xmlText,
+    workspaceJson: jsonState,
     multiServoConfigs: entries,
     ui: { realTime }
   };
@@ -1386,7 +1387,6 @@ function fallbackDownload(filename, text, type='application/json'){
   a.href=url; a.download=filename; document.body.appendChild(a); a.click();
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 0);
 }
-
 async function saveProject(){
   try{
     const data = buildProjectPayload();
@@ -1396,10 +1396,7 @@ async function saveProject(){
     if(window.showSaveFilePicker){
       const handle = await window.showSaveFilePicker({
         suggestedName: defaultName,
-        types: [{
-          description: 'XROBO Project',
-          accept: { 'application/json': ['.xrobo.json'] }
-        }]
+        types: [{ description: 'XROBO Project', accept: { 'application/json': ['.xrobo.json'] } }]
       });
       const stream = await handle.createWritable();
       await stream.write(json);
@@ -1415,11 +1412,10 @@ async function saveProject(){
     alert('저장 실패: '+(err?.message||err));
   }
 }
-
 async function loadProject(){
-  if(servoModal.classList.contains('show')){
-    servoModal.classList.remove('show');
-    servoModal.setAttribute('aria-hidden','true');
+  if(document.getElementById('servoModal').classList.contains('show')){
+    document.getElementById('servoModal').classList.remove('show');
+    document.getElementById('servoModal').setAttribute('aria-hidden','true');
     currentBlock=null;
   }
 
@@ -1427,18 +1423,14 @@ async function loadProject(){
     let file;
     if(window.showOpenFilePicker){
       const [handle] = await window.showOpenFilePicker({
-        types: [{
-          description: 'XROBO Project',
-          accept: { 'application/json': ['.xrobo.json', '.json'] }
-        }],
+        types: [{ description: 'XROBO Project', accept: { 'application/json': ['.xrobo.json', '.json'] } }],
         multiple: false
       });
       file = await handle.getFile();
     }else{
       file = await new Promise((resolve, reject)=>{
         const inp=document.createElement('input');
-        inp.type='file';
-        inp.accept='.xrobo.json,application/json,text/json';
+        inp.type='file'; inp.accept='.xrobo.json,application/json,text/json';
         inp.onchange=async (e)=>{
           const f=e.target.files?.[0];
           if(f) resolve(f); else reject(new Error('파일이 선택되지 않았습니다.'));
@@ -1454,11 +1446,9 @@ async function loadProject(){
       throw new Error('프로젝트 파일 형식이 올바르지 않습니다.');
     }
 
-    // 초기화
     ws.clear();
     multiServoConfigs.clear();
 
-    // 1) XML 우선 로드
     let loaded = false;
     if (data.workspaceXml && typeof data.workspaceXml === 'string'){
       try{
@@ -1469,7 +1459,6 @@ async function loadProject(){
         console.warn('XML 로드 실패, JSON으로 폴백 시도:', e);
       }
     }
-    // 2) JSON 백업 로드
     if(!loaded && data.workspaceJson){
       if(!workspaceLoadJsonCompat(data.workspaceJson, ws)){
         throw new Error('이 Blockly 빌드는 JSON 로더를 지원하지 않습니다.');
@@ -1480,7 +1469,6 @@ async function loadProject(){
       throw new Error('워크스페이스를 복원할 수 없습니다.');
     }
 
-    // 멀티 서보 설정 복원
     if(Array.isArray(data.multiServoConfigs)){
       for(const [id, cfg] of data.multiServoConfigs){
         multiServoConfigs.set(id, cfg);
@@ -1491,7 +1479,6 @@ async function loadProject(){
       }
     }
 
-    // COUNT 라벨 동기화
     ws.getAllBlocks(false).forEach(b=>{
       if(b.type==='multi_servo'){
         const n=(multiServoConfigs.get(b.id)?.units?.length)||0;
@@ -1499,7 +1486,6 @@ async function loadProject(){
       }
     });
 
-    // UI 상태 복원(실시간 토글)
     if(data.ui && typeof data.ui.realTime === 'boolean'){
       setRealtime(data.ui.realTime);
     }
@@ -1511,7 +1497,6 @@ async function loadProject(){
     alert('불러오기 실패: '+(err?.message||err));
   }
 }
-
 $('saveBtn').addEventListener('click', saveProject);
 $('loadBtn').addEventListener('click', loadProject);
 
