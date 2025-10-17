@@ -15,7 +15,7 @@
     --headerBgTop: #fff7ed;
     --headerBgBottom: #fffbeb;
     --headerBorder: #fed7aa;
-    --logH: 180px;   /* 실행 로그 초기 높이 */
+    --logH: 180px;
     --blue: #1d4ed8;
 
     /* 핸들/삼각형 */
@@ -64,7 +64,7 @@
     user-select:none;
   }
   #connectToggle{ background:#2563eb; color:#fff; }
-  #rtToggle.on{ background:#2563eb; color:#fff; } /* 모달 속 실시간 버튼 */
+  #rtToggle.on{ background:#2563eb; color:#fff; }
   #runToggle{ background:#16a34a; color:#fff; }
   #fsBtn{ background:#111827; color:#fff; }
 
@@ -90,11 +90,11 @@
   #main{
     display:flex; width:100%;
     height: calc(100vh - var(--headerH));
-    min-height: 0; /* ← 내부 스크롤 허용 */
+    min-height: 0;
   }
   #left{
     position:relative; flex:1 1 auto; min-width:0; height:100%;
-    min-height:0; /* ← 내부 스크롤 허용 */
+    min-height:0;
     display:flex; overflow:visible;
   }
   #blocklyDiv{ flex:1 1 auto; min-width:0; height:100%; width:100%; }
@@ -104,10 +104,10 @@
     flex:0 0 40%; display:flex; flex-direction:column; background:#fff;
     margin:8px 8px 8px 0; border:1px solid #e5e7eb; border-left:3px solid var(--blue);
     border-radius:12px 0 0 12px; box-shadow:0 2px 10px rgba(0,0,0,.04);
-    overflow:hidden; position:relative; min-height:0; /* ← 내부 스크롤 허용 */
+    overflow:hidden; position:relative; min-height:0;
   }
   #rightTop{
-    flex:1 1 auto; min-height:0; /* ← 내부 스크롤 허용 */
+    flex:1 1 auto; min-height:0;
     border-bottom:1px solid #e5e7eb; background:#f5f7fa; color:#111827;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: calc(13px * var(--uiScale)); line-height:1.45;
@@ -115,7 +115,7 @@
     overflow:auto; white-space:pre; tab-size:2;
   }
 
-  /* === 크기조절 분할바 (코딩창/로그창 사이) === */
+  /* 크기조절 분할바 */
   #splitBar{
     flex: 0 0 calc(6px * var(--uiScale));
     cursor: row-resize;
@@ -126,7 +126,7 @@
 
   /* 실행 로그 패널 */
   #rightBottom{
-    flex: 0 0 var(--logH);       /* ← 높이는 변수(분할바로 조절) */
+    flex: 0 0 var(--logH);
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -203,7 +203,7 @@
   .modal-head .btn{ height:30px; background:#fff; border:1px solid #d1d5db; }
   .modal-body{ position:relative; flex:1 1 auto; }
 
-  /* 모달 보드 + 유닛(회색 박스) + 다이얼 */
+  /* 모달 보드 + 유닛 */
   .board{ position:absolute; inset:0; background:#ffffff; background-size:contain; background-repeat:no-repeat; background-position:center; overflow:auto; }
   .unit{
     position:absolute; width:128px; height:128px;
@@ -247,7 +247,7 @@
   .dot.blue{ stroke:#1e3a8a; stroke-width:.6; }
   .dot.red { fill:#ef4444; stroke:#7f1d1d; stroke-width:.6; filter: drop-shadow(0 0 6px rgba(239,68,68,.9)); }
 
-  /* === 안드로이드 + 세로(포트레이트)에서 오른쪽 패널을 아래로 배치 === */
+  /* 안드로이드 + 세로(포트레이트)에서 오른쪽 패널을 아래로 배치 */
   @media (orientation: portrait) {
     body.android #main{ flex-direction: column; }
     body.android #left{ flex: 1 1 auto; min-height: 0; }
@@ -420,16 +420,17 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-/* === 줌/휴지통 80% 축소 + ‘휴지통 위로’ 정렬 === */
-function scaleAndPlaceBlocklyControls(scale=0.8, margin=8){
-  const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg') || document.querySelector('#blocklyDiv .blocklySvg');
-  if(!svg){ requestAnimationFrame(()=>scaleAndPlaceBlocklyControls(scale, margin)); return; }
+/* === 줌/휴지통 80% 축소 + ‘휴지통 위로’ 정렬 (그룹 transform만 사용) === */
+function placeControlsV3(scale=0.8, margin=12){
+  const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+  if(!svg){ requestAnimationFrame(()=>placeControlsV3(scale, margin)); return; }
 
   const gZoom  = svg.querySelector('g.blocklyZoom');
   const gTrash = svg.querySelector('g.blocklyTrash');
   if(!gZoom || !gTrash) return;
 
-  const parseTransform = (el)=>{
+  // translate 파싱
+  const parseTranslate = (el)=>{
     const t = (el.getAttribute('transform')||'').trim();
     let x=0,y=0;
     let m = t.match(/translate\(\s*([-\d.]+)(?:[,\s]+([-\d.]+))?\s*\)/i);
@@ -439,56 +440,64 @@ function scaleAndPlaceBlocklyControls(scale=0.8, margin=8){
     return {x,y};
   };
 
-  function ensureWrapAndScale(group, anchor /* 'tl' | 'br' */){
-    if(!group) return null;
-    let wrap = Array.from(group.children).find(el => el.classList && el.classList.contains('__xscale'));
-    if(!wrap){
-      wrap = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      wrap.setAttribute('class','__xscale');
-      while(group.firstChild){ wrap.appendChild(group.firstChild); }
-      group.appendChild(wrap);
-      wrap.removeAttribute('transform');
-      const bb = wrap.getBBox();
-      wrap.dataset.bw = String(bb.width  || 24);
-      wrap.dataset.bh = String(bb.height || 24);
+  // 최초 1회 원본 위치/크기 저장
+  const ensureMetrics = (g)=>{
+    if(!g.dataset.ox || !g.dataset.oy || !g.dataset.bw || !g.dataset.bh){
+      const {x, y} = parseTranslate(g);
+      const prev = g.getAttribute('transform');
+      g.removeAttribute('transform');     // 원본 크기 계산
+      const bb = g.getBBox();
+      g.setAttribute('transform', prev || '');
+      g.dataset.ox = String(x);
+      g.dataset.oy = String(y);
+      g.dataset.bw = String(bb.width  || 24);
+      g.dataset.bh = String(bb.height || 24);
     }
-    const bw = parseFloat(wrap.dataset.bw || '24');
-    const bh = parseFloat(wrap.dataset.bh || '24');
+    return {
+      ox: parseFloat(g.dataset.ox), oy: parseFloat(g.dataset.oy),
+      bw: parseFloat(g.dataset.bw), bh: parseFloat(g.dataset.bh)
+    };
+  };
 
-    if(anchor === 'br'){
-      const dx = (1 - scale) * bw;
-      const dy = (1 - scale) * bh;
-      wrap.setAttribute('transform', `translate(${dx},${dy}) scale(${scale})`);
-    }else{
-      wrap.setAttribute('transform', `scale(${scale})`);
-    }
-    return {wrap, bw, bh};
-  }
+  // 1) 휴지통(우하단 기준 축소)
+  const T = ensureMetrics(gTrash);
+  const tx = T.ox + (1 - scale) * T.bw;
+  const ty = T.oy + (1 - scale) * T.bh;
+  gTrash.setAttribute('transform', `translate(${tx},${ty}) scale(${scale})`);
 
-  const trash = ensureWrapAndScale(gTrash, 'br');
-  if(!trash) return;
+  // 2) 줌(휴지통 바로 위, 오른쪽 정렬)
+  const Z = ensureMetrics(gZoom);
+  const zW = Z.bw * scale;
+  const zH = Z.bh * scale;
 
-  const zoom = ensureWrapAndScale(gZoom, 'tl');
-  if(!zoom) return;
-
-  const tz = parseTransform(gTrash);
-  const tW = trash.bw;
-  const tH = trash.bh;
-  const zW = zoom.bw * scale;
-  const zH = zoom.bh * scale;
-
-  const rightEdge = tz.x + tW;
-  const topOfTrashFinal = tz.y + (1 - scale) * tH;
+  const rightEdge = T.ox + T.bw;
+  const topOfTrashFinal = T.oy + (1 - scale) * T.bh;
 
   const zx = rightEdge - zW;
   const zy = topOfTrashFinal - margin - zH;
 
-  gZoom.setAttribute('transform', `translate(${zx},${zy})`);
+  gZoom.setAttribute('transform', `translate(${zx},${zy}) scale(${scale})`);
 }
-function schedulePlace(){ requestAnimationFrame(()=>scaleAndPlaceBlocklyControls(0.8, 8)); }
+
+// 최초/리사이즈/워크스페이스 변경 시 재배치
+function schedulePlace(){ requestAnimationFrame(()=>placeControlsV3(0.8, 12)); }
 schedulePlace();
 window.addEventListener('resize', schedulePlace);
 ws.addChangeListener(schedulePlace);
+
+// 블록 드래그 중 줌 버튼 포인터 차단 → ‘−’ 깜빡임 방지
+ws.addChangeListener(function(ev){
+  if(ev && ev.type === Blockly.Events.BLOCK_DRAG && typeof ev.isStart === 'boolean'){
+    const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+    const gZoom = svg?.querySelector('g.blocklyZoom');
+    if(gZoom) gZoom.style.pointerEvents = ev.isStart ? 'none' : '';
+  }
+});
+document.addEventListener('mouseup', ()=> {
+  const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg, #blocklyDiv .blocklySvg');
+  const gZoom = svg?.querySelector('g.blocklyZoom');
+  if(gZoom) gZoom.style.pointerEvents = '';
+}, {passive:true});
 
 /* ================= 블록 정의 ================= */
 const PINS_IN=[["IN1","IN1"],["IN2","IN2"],["IN3","IN3"],["IN4","IN4"]];
@@ -575,7 +584,7 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
       { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0 0 1 .255 1.287l-1.48 2.564a1 1 0 0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0 0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0  0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0  0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
         "width":20, "height":20, "alt":"설정" },
       { "type":"field_image", "name":"DUP",
         "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
@@ -679,6 +688,7 @@ function walkNode(b, list){
     case 'led_ctrl':{
       const t=b.getFieldValue('TGT'),m=b.getFieldValue('MODE'),v=+b.getFieldValue('VAL'); list.push({type:'CMD',s:`LED ${t} ${m} ${v}`}); break; }
 
+    /* 멀티 서보는 설정/메타 전용 */
     case 'multi_servo':{
       const cfg = multiServoConfigs.get(b.id);
       const n = cfg?.units?.length || 0;
@@ -798,7 +808,7 @@ setInterval(()=>applyUiScaleFromWorkspace(), 200);
 applyUiScaleFromWorkspace();
 applyHeaderHeight();
 
-/* ================= 크기조절 분할바 (아래로 내리면 로그창 줄어듦) ================= */
+/* ================= 크기조절 분할바 (아래로 당기면 로그창이 줄어듦) ================= */
 (function(){
   const split = document.getElementById('splitBar');
   const right = document.getElementById('right');
@@ -813,8 +823,8 @@ applyHeaderHeight();
     return parseFloat(v)||180;
   };
   const setVarPx = (px)=>{
-    const minH = 80;                                 // 로그 최소 높이
-    const maxH = Math.max(120, right.clientHeight - 120); // 코드창 최소 120px 확보
+    const minH = 80;
+    const maxH = Math.max(120, right.clientHeight - 120);
     const clamped = Math.min(maxH, Math.max(minH, px|0));
     document.documentElement.style.setProperty('--logH', clamped+'px');
     Blockly.svgResize(ws);
@@ -822,7 +832,7 @@ applyHeaderHeight();
 
   const onMove = (y)=>{
     const dy = y - startY;
-    setVarPx(startH - dy);  // 아래로 당기면 로그창 감소
+    setVarPx(startH - dy);  // ↓로 내리면 로그 높이 감소
   };
 
   split.addEventListener('mousedown', (e)=>{
@@ -1035,7 +1045,7 @@ fsBtn.onclick=async()=>{ if(document.fullscreenElement) await exitFS(); else awa
 document.addEventListener('fullscreenchange', syncFSLabel);
 syncFSLabel();
 
-/* ================= 멀티 서보 설정 모달 구현 ================= */
+/* ================= 멀티 서보 설정 모달 ================= */
 const servoModal = document.getElementById('servoModal');
 const boardEl = document.getElementById('board');
 const addServoBtn = document.getElementById('addServoBtn');
@@ -1197,6 +1207,7 @@ function createUnit(state){
     state.angle=clamp(state.angle - d*1,0,270); render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
   }, {passive:false});
 
+  /* 유닛 드래그(헤더로만) */
   function unitDown(e){
     if(e.currentTarget !== state.els.handle) return;
     if(e.target.closest('.pwr-top')) return;
