@@ -15,7 +15,7 @@
     --headerBgTop: #fff7ed;
     --headerBgBottom: #fffbeb;
     --headerBorder: #fed7aa;
-    --logH: 180px;       /* ← 실행 로그 초기 높이 */
+    --logH: 180px;
     --blue: #1d4ed8;
 
     /* 핸들/삼각형 */
@@ -254,36 +254,23 @@
   .dot.blue{ stroke:#1e3a8a; stroke-width:.6; }
   .dot.red { fill:#ef4444; stroke:#7f1d1d; stroke-width:.6; filter: drop-shadow(0 0 6px rgba(239,68,68,.9)); }
 
-  /* === 휴지통/줌 컨트롤 80% 축소 (원래 위치 유지) === */
-  #blocklyDiv svg g.blocklyZoom{
-    transform-box: fill-box;
-    transform-origin: 0% 0%;       /* 좌상단 기준 → 위치 변화 최소화 */
-    transform: scale(0.8);
-  }
-  #blocklyDiv svg g.blocklyTrash{
-    transform-box: fill-box;
-    transform-origin: 100% 100%;   /* 우하단 기준 → 위치 변화 최소화 */
-    transform: scale(0.8);
-  }
-
   /* === 안드로이드 + 세로(포트레이트)에서 오른쪽 패널을 아래로 배치 === */
   @media (orientation: portrait) {
     body.android #main{
-      flex-direction: column;   /* 가로 → 세로 스택 */
+      flex-direction: column;
     }
     body.android #left{
       flex: 1 1 auto;
-      min-height: 0;            /* 내부 스크롤 정상화 */
+      min-height: 0;
     }
     body.android #right{
       flex: 0 0 auto;
-      height: min(46vh, 520px); /* 필요 시 조정 가능 */
+      height: min(46vh, 520px);
       margin: 8px;
-      border-left: 1px solid #e5e7eb;   /* 좌측 보더 */
-      border-top: 3px solid var(--blue);/* 포인트 컬러 상단으로 */
+      border-left: 1px solid #e5e7eb;
+      border-top: 3px solid var(--blue);
       border-radius: 12px;
     }
-    /* 핸들 위치 미세조정(선택) */
     body.android #panelHandle{
       top: calc(8px * var(--uiScale));
     }
@@ -317,7 +304,6 @@
 
     <div id="right">
       <div id="rightTop"></div>
-      <!-- ▼ 크기조절 분할바 추가 -->
       <div id="splitBar" aria-hidden="true"></div>
       <div id="rightBottom">
         <div style="font-size:calc(12px * var(--uiScale));color:#9ca3af;">실행 로그</div>
@@ -428,7 +414,7 @@
   </div>
 
 <script>
-/* 안드로이드 감지 → body.android 클래스 부여 (세로모드 레이아웃 전환용) */
+/* 안드로이드 감지 → body.android 클래스 부여 */
 if (/Android/i.test(navigator.userAgent || '')) { document.body.classList.add('android'); }
 
 /* ================= Blockly 기본 설정 ================= */
@@ -451,6 +437,45 @@ const ws = Blockly.inject('blocklyDiv', {
   grid: { spacing:20, length:3, colour:'#eee', snap:true },
   zoom: { controls:true, wheel:true }
 });
+
+/* === 수정: 줌/휴지통을 ‘원래 위치 유지’한 채 80% 축소 (래퍼 <g>로 scale) === */
+function scaleBlocklyControls(scale=0.8){
+  const svg = document.querySelector('#blocklyDiv .blocklyWorkspaceSvg') || document.querySelector('#blocklyDiv .blocklySvg');
+  if(!svg){ requestAnimationFrame(()=>scaleBlocklyControls(scale)); return; }
+
+  function wrapAndScale(group, anchor /* 'tl' | 'br' */){
+    if(!group) return;
+    // 기존 래퍼 찾기
+    let wrap = Array.from(group.children).find(el => el.classList && el.classList.contains('__xscale'));
+    // 래퍼 없으면 생성하고, 자식들을 래퍼로 이동
+    if(!wrap){
+      wrap = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      wrap.setAttribute('class','__xscale');
+      while(group.firstChild){ wrap.appendChild(group.firstChild); }
+      group.appendChild(wrap);
+      // 측정용(스케일 1에서 bbox 저장)
+      wrap.removeAttribute('transform');
+      const bb = wrap.getBBox();
+      wrap.dataset.bw = String(bb.width || 24);
+      wrap.dataset.bh = String(bb.height || 24);
+    }
+    const bw = parseFloat(wrap.dataset.bw || '24');
+    const bh = parseFloat(wrap.dataset.bh || '24');
+
+    if(anchor === 'br'){
+      const dx = (1 - scale) * bw;
+      const dy = (1 - scale) * bh;
+      wrap.setAttribute('transform', `translate(${dx},${dy}) scale(${scale})`);
+    }else{
+      wrap.setAttribute('transform', `scale(${scale})`);
+    }
+  }
+
+  const gZoom  = svg.querySelector('g.blocklyZoom');
+  const gTrash = svg.querySelector('g.blocklyTrash');
+  wrapAndScale(gZoom,  'tl'); // 좌상단 고정
+  wrapAndScale(gTrash, 'br'); // 우하단 고정
+}
 
 /* ================= 블록 정의 ================= */
 const PINS_IN=[["IN1","IN1"],["IN2","IN2"],["IN3","IN3"],["IN4","IN4"]];
@@ -769,7 +794,13 @@ setInterval(()=>applyUiScaleFromWorkspace(), 200);
 applyUiScaleFromWorkspace();
 applyHeaderHeight();
 
-/* ================= 크기조절 분할바 동작 ================= */
+/* === 적용: 아이콘 스케일(80%) — 초기/변경/리사이즈마다 유지 === */
+function scheduleScale(){ requestAnimationFrame(()=>scaleBlocklyControls(0.8)); }
+scheduleScale();
+window.addEventListener('resize', scheduleScale);
+ws.addChangeListener(scheduleScale);
+
+/* ================= 크기조절 분할바 동작 (방향 수정) ================= */
 (function(){
   const split = document.getElementById('splitBar');
   const right = document.getElementById('right');
@@ -785,7 +816,7 @@ applyHeaderHeight();
   };
   const setVarPx = (px)=>{
     const minH = 80;                                 // 로그 최소 높이
-    const maxH = Math.max(120, right.clientHeight - 120); // 코딩창 최소 120px 확보
+    const maxH = Math.max(120, right.clientHeight - 120); // 코드창 최소 120px 확보
     const clamped = Math.min(maxH, Math.max(minH, px|0));
     document.documentElement.style.setProperty('--logH', clamped+'px');
     Blockly.svgResize(ws);
@@ -793,7 +824,7 @@ applyHeaderHeight();
 
   const onMove = (y)=>{
     const dy = y - startY;
-    setVarPx(startH + dy);
+    setVarPx(startH - dy);  /* === 수정: 아래로 드래그 시 로그창이 줄어들도록 반전 === */
   };
 
   split.addEventListener('mousedown', (e)=>{
@@ -813,7 +844,6 @@ applyHeaderHeight();
   }, {passive:true});
   window.addEventListener('touchend', ()=>{ if(dragging){ dragging=false; document.body.style.userSelect=''; } });
 
-  // 창 리사이즈 시 공간 재계산
   window.addEventListener('resize', ()=>{ setVarPx(getVarPx()); });
 })();
 
